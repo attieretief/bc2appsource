@@ -93,11 +93,6 @@ jobs:
         git commit -m "Bump version to ${{ env.VERSION }} [skip ci]"
         git push
     
-    - name: Create Git tag
-      run: |
-        git tag -a "v${{ env.VERSION }}" -m "Release version ${{ env.VERSION }}"
-        git push origin "v${{ env.VERSION }}"
-    
     - name: Build package
       run: python -m build
     
@@ -109,25 +104,3 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         verbose: true
-    
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: "v${{ env.VERSION }}"
-        name: "BC2AppSource v${{ env.VERSION }}"
-        body: |
-          🚀 **Release BC2AppSource v${{ env.VERSION }}**
-          
-          This release was automatically created by GitHub Actions.
-          
-          ## 📦 Installation
-          
-          ```bash
-          pip install bc2appsource==${{ env.VERSION }}
-          ```
-          
-          ## 📋 Changes
-          
-          See the commit history for detailed changes in this release.
-        draft: false
-        prerelease: false
