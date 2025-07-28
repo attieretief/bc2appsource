@@ -2,7 +2,7 @@
 BC2AppSource - A Python package for publishing Business Central apps to Microsoft AppSource
 """
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 __author__ = "Attie Retief"
 __email__ = "attie@example.com"
 
