@@ -11,7 +11,7 @@ requirements = [
 
 setup(
     name="bc2appsource",
-    version="1.0.0",
+    version="2.0.0",
     author="Attie Retief",
     author_email="attie@example.com",
     description="A tool to publish Business Central apps to Microsoft AppSource",
