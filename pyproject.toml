@@ -1,5 +1,51 @@
+[project]
+name = "bc2appsource"
+version = "2.0.3"
+description = "A tool to publish Business Central apps to Microsoft AppSource"
+authors = [
+    {name = "Attie Retief", email = "attie@example.com"}
+]
+license = "MIT"
+requires-python = ">=3.8"
+readme = "README.md"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Software Distribution",
+]
+keywords = [
+    "business-central",
+    "appsource", 
+    "microsoft",
+    "dynamics365",
+    "business-central-apps",
+    "publishing",
+    "automation"
+]
+dependencies = [
+    "requests>=2.31.0",
+    "click>=8.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/attieretief/bc2appsource"
+"Bug Tracker" = "https://github.com/attieretief/bc2appsource/issues"
+"Source Code" = "https://github.com/attieretief/bc2appsource"
+"Documentation" = "https://github.com/attieretief/bc2appsource#readme"
+
+[project.scripts]
+bc2appsource = "bc2appsource.cli:main"
+
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]

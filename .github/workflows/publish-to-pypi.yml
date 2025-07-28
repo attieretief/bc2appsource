@@ -40,8 +40,8 @@ jobs:
         echo "Files in directory: $(ls -la)"
         echo "Current commit message: $(git log -1 --pretty=%B)"
         
-        # Extract current version from setup.py
-        CURRENT_VERSION=$(grep -P 'version\s*=\s*"([^"]*)"' setup.py | grep -Po '"([^"]*)"' | sed 's/"//g')
+        # Extract current version from pyproject.toml
+        CURRENT_VERSION=$(grep -P 'version\s*=\s*"([^"]*)"' pyproject.toml | grep -Po '"([^"]*)"' | sed 's/"//g')
         echo "Current version: $CURRENT_VERSION"
         
         # Parse version components
@@ -71,15 +71,15 @@ jobs:
         echo "New version: $NEW_VERSION"
         echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
         
-        # Update version in setup.py
-        sed -i "s/version=\"$CURRENT_VERSION\"/version=\"$NEW_VERSION\"/" setup.py
+        # Update version in pyproject.toml
+        sed -i "s/version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" pyproject.toml
         
         # Also update version in __init__.py
         sed -i "s/__version__ = \"$CURRENT_VERSION\"/__version__ = \"$NEW_VERSION\"/" bc2appsource/__init__.py
         
         # Show updated files
-        echo "Updated setup.py:"
-        grep version setup.py
+        echo "Updated pyproject.toml:"
+        grep version pyproject.toml
         echo "Updated __init__.py:"
         grep __version__ bc2appsource/__init__.py
     
@@ -89,7 +89,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
         
         # Commit and push the version bump
-        git add setup.py bc2appsource/__init__.py
+        git add pyproject.toml bc2appsource/__init__.py
         git commit -m "Bump version to ${{ env.VERSION }} [skip ci]"
         git push
     
