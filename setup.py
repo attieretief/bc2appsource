@@ -3,8 +3,11 @@ from setuptools import setup, find_packages
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+# Define requirements directly to avoid file reading issues in isolated build environments
+requirements = [
+    "requests>=2.31.0",
+    "click>=8.0.0",
+]
 
 setup(
     name="bc2appsource",
