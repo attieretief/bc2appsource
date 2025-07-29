@@ -14,7 +14,7 @@ class TestAppSourcePublisher:
         """Test AppSourcePublisher initialization"""
         publisher = AppSourcePublisher("tenant", "client", "secret")
         assert publisher.auth.tenant_id == "tenant"
-        assert publisher.base_url == "https://api.partner.microsoft.com/v1.0"
+        assert publisher.base_url == "https://api.partner.microsoft.com/v1.0/ingestion"
 
     @patch('bc2appsource.publisher.requests.get')
     def test_get_products_success(self, mock_get):
@@ -90,5 +90,52 @@ class TestAppSourcePublisher:
                 
                 assert result.success
                 assert result.submission_id == "submission_123"
+                
+                # Verify the correct API URL was called
+                expected_url = "https://api.partner.microsoft.com/v1.0/ingestion/products/product_123/submissions"
+                mock_post.assert_called_once()
+                args, kwargs = mock_post.call_args
+                assert args[0] == expected_url
             finally:
                 os.unlink(tmp.name)
+
+    @patch('bc2appsource.publisher.requests.post')
+    def test_submit_to_appsource_failure(self, mock_post):
+        """Test failed AppSource submission"""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.text = "Bad Request"
+        mock_post.return_value = mock_response
+
+        publisher = AppSourcePublisher("tenant", "client", "secret")
+        
+        with tempfile.NamedTemporaryFile(suffix=".app", delete=False) as tmp:
+            try:
+                with patch.object(publisher.auth, 'get_access_token', return_value="token"):
+                    result = publisher.submit_to_appsource("product_123", tmp.name)
+                
+                assert not result.success
+                assert "Submission failed with status 400" in result.error
+            finally:
+                os.unlink(tmp.name)
+
+    @patch('bc2appsource.publisher.glob.glob')
+    def test_resolve_app_file_wildcard(self, mock_glob):
+        """Test resolving wildcard file pattern"""
+        publisher = AppSourcePublisher("tenant", "client", "secret")
+        
+        mock_glob.return_value = ["app1.app", "app2.app"]
+        result = publisher.resolve_app_file("*.app")
+        
+        assert result == "app1.app"  # Should return first match
+        mock_glob.assert_called_once_with("*.app")
+
+    @patch('bc2appsource.publisher.glob.glob')
+    def test_resolve_app_file_wildcard_no_matches(self, mock_glob):
+        """Test resolving wildcard pattern with no matches"""
+        publisher = AppSourcePublisher("tenant", "client", "secret")
+        
+        mock_glob.return_value = []
+        
+        with pytest.raises(FileNotFoundError, match="No files found matching pattern"):
+            publisher.resolve_app_file("*.app")
