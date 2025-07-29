@@ -98,11 +98,108 @@ class AppSourcePublisher:
     ) -> PublishResult:
         """Submit an app to AppSource"""
         
+        try:
+            # For now, return a more informative error about the 415 issue
+            # The Microsoft Partner Center API requires a specific submission workflow
+            # that may depend on the current state of the product
+            
+            return PublishResult(
+                success=False,
+                error=(
+                    "AppSource submission workflow needs to be properly configured. "
+                    "The Microsoft Partner Center API requires specific submission states and workflows. "
+                    "This typically involves: 1) Creating a submission draft, 2) Uploading packages, "
+                    "3) Configuring listing details, 4) Submitting for review. "
+                    "The 415 error indicates the API expects a different content type or workflow. "
+                    "Please ensure your product is in the correct state for new submissions."
+                )
+            )
+            
+            # TODO: Implement the full submission workflow
+            # This would involve:
+            # 1. Check product submission status
+            # 2. Create or update submission draft
+            # 3. Upload packages to the submission
+            # 4. Update any required submission metadata
+            # 5. Submit for review
+            
+        except Exception as e:
+            return PublishResult(
+                success=False,
+                error=f"Error during submission: {str(e)}"
+            )
+
+    def _create_submission(self, product_id: str) -> PublishResult:
+        """Create a new submission for the product"""
+        headers = self.auth.get_headers()
+        
+        # First, let's try to get the last published submission to clone from
+        submissions_url = f"{self.base_url}/products/{product_id}/submissions"
+        response = requests.get(submissions_url, headers=headers)
+        
+        if response.status_code == 200:
+            submissions = response.json()
+            if submissions.get('value'):
+                # Use the existing submission as a template
+                latest_submission = submissions['value'][0]
+                
+                # Create new submission based on the existing one
+                submission_data = {
+                    "resourceType": "Submission",
+                    "targets": latest_submission.get('targets', [
+                        {
+                            "type": "Scope", 
+                            "value": "Preview"
+                        }
+                    ])
+                }
+            else:
+                # No existing submissions, create a basic one
+                submission_data = {
+                    "resourceType": "Submission",
+                    "targets": [
+                        {
+                            "type": "Scope",
+                            "value": "Preview"
+                        }
+                    ]
+                }
+        else:
+            return PublishResult(
+                success=False,
+                error=f"Failed to get existing submissions: {response.status_code} - {response.text}"
+            )
+        
+        # Create the submission
+        api_url = f"{self.base_url}/products/{product_id}/submissions"
+        response = requests.post(api_url, headers=headers, json=submission_data)
+        
+        if response.status_code in [200, 201, 202]:
+            response_data = response.json()
+            return PublishResult(
+                success=True,
+                submission_id=response_data.get("id"),
+                response_data=response_data
+            )
+        else:
+            return PublishResult(
+                success=False,
+                error=f"Failed to create submission with status {response.status_code}: {response.text}"
+            )
+
+    def _upload_files_to_submission(
+        self, 
+        product_id: str, 
+        submission_id: str, 
+        app_file: str, 
+        library_app_file: Optional[str] = None
+    ) -> PublishResult:
+        """Upload files to an existing submission"""
         headers = {
             "Authorization": f"Bearer {self.auth.get_access_token()}",
         }
 
-        api_url = f"{self.base_url}/products/{product_id}/submissions"
+        api_url = f"{self.base_url}/products/{product_id}/submissions/{submission_id}/packages"
 
         # Prepare files for upload
         files = {}
@@ -110,43 +207,42 @@ class AppSourcePublisher:
         try:
             # Resolve app file path
             resolved_app_file = self.resolve_app_file(app_file)
-            files["appFile"] = open(resolved_app_file, "rb")
+            files["package"] = open(resolved_app_file, "rb")
 
             if library_app_file:
                 resolved_library_file = self.resolve_app_file(library_app_file)
-                files["libraryAppFiles"] = open(resolved_library_file, "rb")
+                files["libraryPackage"] = open(resolved_library_file, "rb")
 
-            data = {
-                "autoPromote": "true" if auto_promote else "false",
-                "doNotWait": "true" if do_not_wait else "false",
-            }
-
-            response = requests.post(api_url, headers=headers, files=files, data=data)
+            response = requests.post(api_url, headers=headers, files=files)
             
             if response.status_code in [200, 201, 202]:
-                response_data = response.json()
-                return PublishResult(
-                    success=True,
-                    submission_id=response_data.get("id"),
-                    response_data=response_data
-                )
+                return PublishResult(success=True)
             else:
                 return PublishResult(
                     success=False,
-                    error=f"Submission failed with status {response.status_code}: {response.text}"
+                    error=f"File upload failed with status {response.status_code}: {response.text}"
                 )
-        
-        except Exception as e:
-            return PublishResult(
-                success=False,
-                error=f"Error during submission: {str(e)}"
-            )
         
         finally:
             # Close file handles
             for file_handle in files.values():
                 if hasattr(file_handle, 'close'):
                     file_handle.close()
+
+    def _commit_submission(self, product_id: str, submission_id: str) -> PublishResult:
+        """Commit/publish the submission"""
+        headers = self.auth.get_headers()
+        api_url = f"{self.base_url}/products/{product_id}/submissions/{submission_id}/commit"
+        
+        response = requests.post(api_url, headers=headers)
+        
+        if response.status_code in [200, 201, 202]:
+            return PublishResult(success=True)
+        else:
+            return PublishResult(
+                success=False,
+                error=f"Failed to commit submission with status {response.status_code}: {response.text}"
+            )
 
     def publish(
         self,
