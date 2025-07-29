@@ -37,15 +37,15 @@ def cli():
 )
 @click.option(
     "--tenant-id",
-    help="Azure tenant ID (or set AZURE_TENANT_ID env var)"
+    help="APPSOURCE tenant ID (or set APPSOURCE_TENANT_ID env var)"
 )
 @click.option(
     "--client-id",
-    help="Azure client ID (or set AZURE_CLIENT_ID env var)"
+    help="APPSOURCE client ID (or set APPSOURCE_CLIENT_ID env var)"
 )
 @click.option(
     "--client-secret",
-    help="Azure client secret (or set AZURE_CLIENT_SECRET env var)"
+    help="APPSOURCE client secret (or set APPSOURCE_CLIENT_SECRET env var)"
 )
 @click.option(
     "--auto-promote/--no-auto-promote",
@@ -71,15 +71,15 @@ def publish(
     """Publish a Business Central app to Microsoft AppSource"""
     
     # Get credentials from environment if not provided
-    tenant_id = tenant_id or os.getenv("AZURE_TENANT_ID")
-    client_id = client_id or os.getenv("AZURE_CLIENT_ID")
-    client_secret = client_secret or os.getenv("AZURE_CLIENT_SECRET")
+    tenant_id = tenant_id or os.getenv("APPSOURCE_TENANT_ID")
+    client_id = client_id or os.getenv("APPSOURCE_CLIENT_ID")
+    client_secret = client_secret or os.getenv("APPSOURCE_CLIENT_SECRET")
     
     if not all([tenant_id, client_id, client_secret]):
-        click.echo("Error: Azure credentials are required. Provide them via options or environment variables:", err=True)
-        click.echo("  --tenant-id or AZURE_TENANT_ID", err=True)
-        click.echo("  --client-id or AZURE_CLIENT_ID", err=True)
-        click.echo("  --client-secret or AZURE_CLIENT_SECRET", err=True)
+        click.echo("Error: APPSOURCE credentials are required. Provide them via options or environment variables:", err=True)
+        click.echo("  --tenant-id or APPSOURCE_TENANT_ID", err=True)
+        click.echo("  --client-id or APPSOURCE_CLIENT_ID", err=True)
+        click.echo("  --client-secret or APPSOURCE_CLIENT_SECRET", err=True)
         sys.exit(1)
     
     if not product_name and not product_id:
@@ -118,15 +118,15 @@ def publish(
 @cli.command()
 @click.option(
     "--tenant-id",
-    help="Azure tenant ID (or set AZURE_TENANT_ID env var)"
+    help="APPSOURCE tenant ID (or set APPSOURCE_TENANT_ID env var)"
 )
 @click.option(
     "--client-id",
-    help="Azure client ID (or set AZURE_CLIENT_ID env var)"
+    help="APPSOURCE client ID (or set APPSOURCE_CLIENT_ID env var)"
 )
 @click.option(
     "--client-secret",
-    help="Azure client secret (or set AZURE_CLIENT_SECRET env var)"
+    help="APPSOURCE client secret (or set APPSOURCE_CLIENT_SECRET env var)"
 )
 def list_products(
     tenant_id: Optional[str],
@@ -136,12 +136,12 @@ def list_products(
     """List all AppSource products for the authenticated account"""
     
     # Get credentials from environment if not provided
-    tenant_id = tenant_id or os.getenv("AZURE_TENANT_ID")
-    client_id = client_id or os.getenv("AZURE_CLIENT_ID")
-    client_secret = client_secret or os.getenv("AZURE_CLIENT_SECRET")
+    tenant_id = tenant_id or os.getenv("APPSOURCE_TENANT_ID")
+    client_id = client_id or os.getenv("APPSOURCE_CLIENT_ID")
+    client_secret = client_secret or os.getenv("APPSOURCE_CLIENT_SECRET")
     
     if not all([tenant_id, client_id, client_secret]):
-        click.echo("Error: Azure credentials are required", err=True)
+        click.echo("Error: APPSOURCE credentials are required", err=True)
         sys.exit(1)
     
     try:
