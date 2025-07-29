@@ -1,6 +1,6 @@
 [project]
 name = "bc2appsource"
-version = "0.1.3"
+version = "0.1.4"
 description = "A tool to publish Business Central apps to Microsoft AppSource"
 authors = [
     {name = "Attie Retief", email = "attie@example.com"}
