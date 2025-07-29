@@ -26,7 +26,7 @@ class AppSourcePublisher:
 
     def __init__(self, tenant_id: str, client_id: str, client_secret: str):
         self.auth = AuthContext(tenant_id, client_id, client_secret)
-        self.base_url = "https://api.partner.microsoft.com/v1.0"
+        self.base_url = "https://api.partner.microsoft.com/v1.0/ingestion"
 
     def get_products(self, silent: bool = True) -> List[Dict[str, Any]]:
         """Get all AppSource products for the authenticated account"""
