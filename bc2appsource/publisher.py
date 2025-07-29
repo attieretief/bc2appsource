@@ -96,153 +96,319 @@ class AppSourcePublisher:
         auto_promote: bool = True,
         do_not_wait: bool = True,
     ) -> PublishResult:
-        """Submit an app to AppSource"""
+        """Submit an app to AppSource using the correct Microsoft Partner Center workflow"""
         
         try:
-            # For now, return a more informative error about the 415 issue
-            # The Microsoft Partner Center API requires a specific submission workflow
-            # that may depend on the current state of the product
+            # Step 1: Check if there's already a submission in progress
+            existing_submission = self._check_existing_submission(product_id)
+            if existing_submission and not existing_submission.success:
+                return existing_submission
             
-            return PublishResult(
-                success=False,
-                error=(
-                    "AppSource submission workflow needs to be properly configured. "
-                    "The Microsoft Partner Center API requires specific submission states and workflows. "
-                    "This typically involves: 1) Creating a submission draft, 2) Uploading packages, "
-                    "3) Configuring listing details, 4) Submitting for review. "
-                    "The 415 error indicates the API expects a different content type or workflow. "
-                    "Please ensure your product is in the correct state for new submissions."
+            # Step 2: Get package branch information
+            package_branch = self._get_package_branch(product_id)
+            if not package_branch.success:
+                return package_branch
+            
+            package_instance_id = package_branch.response_data.get('currentDraftInstanceID')
+            
+            # Step 3: Upload app files to package storage
+            upload_result = self._upload_app_packages(product_id, package_instance_id, app_file, library_app_file)
+            if not upload_result.success:
+                return upload_result
+            
+            # Step 4: Update package configuration
+            config_result = self._update_package_configuration(product_id, package_instance_id, upload_result.response_data)
+            if not config_result.success:
+                return config_result
+            
+            # Step 5: Create the submission
+            submission_body = {
+                "resourceType": "SubmissionCreationRequest",
+                "targets": [
+                    {
+                        "type": "Scope",
+                        "value": "preview"
+                    }
+                ],
+                "resources": [
+                    {
+                        "type": "Package",
+                        "value": package_instance_id
+                    }
+                ]
+            }
+            
+            headers = self.auth.get_headers()
+            api_url = f"{self.base_url}/products/{product_id}/submissions"
+            
+            response = requests.post(api_url, headers=headers, json=submission_body)
+            
+            if response.status_code in [200, 201, 202]:
+                response_data = response.json()
+                submission_id = response_data.get("id")
+                
+                if not do_not_wait:
+                    # Wait for submission to complete
+                    self._wait_for_submission(product_id, submission_id, auto_promote)
+                
+                return PublishResult(
+                    success=True,
+                    submission_id=submission_id,
+                    response_data=response_data
                 )
-            )
-            
-            # TODO: Implement the full submission workflow
-            # This would involve:
-            # 1. Check product submission status
-            # 2. Create or update submission draft
-            # 3. Upload packages to the submission
-            # 4. Update any required submission metadata
-            # 5. Submit for review
-            
+            else:
+                return PublishResult(
+                    success=False,
+                    error=f"Submission creation failed with status {response.status_code}: {response.text}"
+                )
+        
         except Exception as e:
             return PublishResult(
                 success=False,
                 error=f"Error during submission: {str(e)}"
             )
 
-    def _create_submission(self, product_id: str) -> PublishResult:
-        """Create a new submission for the product"""
+    def _check_existing_submission(self, product_id: str) -> PublishResult:
+        """Check if there's already a submission in progress"""
         headers = self.auth.get_headers()
-        
-        # First, let's try to get the last published submission to clone from
-        submissions_url = f"{self.base_url}/products/{product_id}/submissions"
-        response = requests.get(submissions_url, headers=headers)
-        
-        if response.status_code == 200:
-            submissions = response.json()
-            if submissions.get('value'):
-                # Use the existing submission as a template
-                latest_submission = submissions['value'][0]
-                
-                # Create new submission based on the existing one
-                submission_data = {
-                    "resourceType": "Submission",
-                    "targets": latest_submission.get('targets', [
-                        {
-                            "type": "Scope", 
-                            "value": "Preview"
-                        }
-                    ])
-                }
-            else:
-                # No existing submissions, create a basic one
-                submission_data = {
-                    "resourceType": "Submission",
-                    "targets": [
-                        {
-                            "type": "Scope",
-                            "value": "Preview"
-                        }
-                    ]
-                }
-        else:
-            return PublishResult(
-                success=False,
-                error=f"Failed to get existing submissions: {response.status_code} - {response.text}"
-            )
-        
-        # Create the submission
         api_url = f"{self.base_url}/products/{product_id}/submissions"
-        response = requests.post(api_url, headers=headers, json=submission_data)
         
-        if response.status_code in [200, 201, 202]:
-            response_data = response.json()
-            return PublishResult(
-                success=True,
-                submission_id=response_data.get("id"),
-                response_data=response_data
-            )
-        else:
+        response = requests.get(api_url, headers=headers)
+        if response.status_code != 200:
             return PublishResult(
                 success=False,
-                error=f"Failed to create submission with status {response.status_code}: {response.text}"
+                error=f"Failed to check existing submissions: {response.status_code} - {response.text}"
             )
-
-    def _upload_files_to_submission(
-        self, 
-        product_id: str, 
-        submission_id: str, 
-        app_file: str, 
-        library_app_file: Optional[str] = None
-    ) -> PublishResult:
-        """Upload files to an existing submission"""
-        headers = {
-            "Authorization": f"Bearer {self.auth.get_access_token()}",
-        }
-
-        api_url = f"{self.base_url}/products/{product_id}/submissions/{submission_id}/packages"
-
-        # Prepare files for upload
-        files = {}
         
-        try:
-            # Resolve app file path
-            resolved_app_file = self.resolve_app_file(app_file)
-            files["package"] = open(resolved_app_file, "rb")
-
-            if library_app_file:
-                resolved_library_file = self.resolve_app_file(library_app_file)
-                files["libraryPackage"] = open(resolved_library_file, "rb")
-
-            response = requests.post(api_url, headers=headers, files=files)
+        submissions = response.json()
+        if submissions.get('value'):
+            latest_submission = submissions['value'][0]
+            state = latest_submission.get('state')
+            substate = latest_submission.get('substate')
             
-            if response.status_code in [200, 201, 202]:
-                return PublishResult(success=True)
-            else:
+            if state == "InProgress" and substate != "Failed":
                 return PublishResult(
                     success=False,
-                    error=f"File upload failed with status {response.status_code}: {response.text}"
+                    error=f"An AppSource submission is in progress (state: {state}, substate: {substate}). Please wait for it to complete or cancel it first."
+                )
+            elif not (state == "Published" and substate in ["ReadyToPublish", "InStore"]):
+                return PublishResult(
+                    success=False,
+                    error=f"Cannot create new submission. Current submission state: {state}, substate: {substate}"
                 )
         
-        finally:
-            # Close file handles
-            for file_handle in files.values():
-                if hasattr(file_handle, 'close'):
-                    file_handle.close()
+        return PublishResult(success=True)
 
-    def _commit_submission(self, product_id: str, submission_id: str) -> PublishResult:
-        """Commit/publish the submission"""
+    def _get_package_branch(self, product_id: str) -> PublishResult:
+        """Get the package branch information"""
         headers = self.auth.get_headers()
-        api_url = f"{self.base_url}/products/{product_id}/submissions/{submission_id}/commit"
+        api_url = f"{self.base_url}/products/{product_id}/branches/getByModule(module=Package)"
         
-        response = requests.post(api_url, headers=headers)
-        
-        if response.status_code in [200, 201, 202]:
-            return PublishResult(success=True)
-        else:
+        response = requests.get(api_url, headers=headers)
+        if response.status_code != 200:
             return PublishResult(
                 success=False,
-                error=f"Failed to commit submission with status {response.status_code}: {response.text}"
+                error=f"Failed to get package branch: {response.status_code} - {response.text}"
             )
+        
+        branches = response.json()
+        if not branches.get('value') or len(branches['value']) == 0:
+            return PublishResult(
+                success=False,
+                error="No package branch found for this product"
+            )
+        
+        # Use the first branch (typically there's only one for BC apps)
+        package_branch = branches['value'][0]
+        
+        return PublishResult(
+            success=True,
+            response_data=package_branch
+        )
+
+    def _upload_app_packages(self, product_id: str, package_instance_id: str, app_file: str, library_app_file: Optional[str] = None) -> PublishResult:
+        """Upload app packages to Azure storage"""
+        headers = self.auth.get_headers()
+        uploaded_packages = {}
+        
+        try:
+            # Upload main app file
+            if app_file:
+                resolved_app_file = self.resolve_app_file(app_file)
+                
+                # Create package upload request
+                body = {
+                    "resourceType": "Dynamics365BusinessCentralAddOnExtensionPackage",
+                    "fileName": os.path.basename(resolved_app_file)
+                }
+                
+                response = requests.post(f"{self.base_url}/products/{product_id}/packages", 
+                                       headers=headers, json=body)
+                
+                if response.status_code not in [200, 201, 202]:
+                    return PublishResult(
+                        success=False,
+                        error=f"Failed to create package upload: {response.status_code} - {response.text}"
+                    )
+                
+                package_upload = response.json()
+                
+                # Upload file to Azure storage using SAS URI
+                upload_result = self._upload_file_to_storage(resolved_app_file, package_upload.get('fileSasUri'))
+                if not upload_result:
+                    return PublishResult(
+                        success=False,
+                        error="Failed to upload app file to storage"
+                    )
+                
+                # Mark package as uploaded
+                package_upload['state'] = 'Uploaded'
+                response = requests.put(f"{self.base_url}/products/{product_id}/packages/{package_upload['id']}", 
+                                      headers=headers, json=package_upload)
+                
+                if response.status_code not in [200, 201, 202]:
+                    return PublishResult(
+                        success=False,
+                        error=f"Failed to mark package as uploaded: {response.status_code} - {response.text}"
+                    )
+                
+                uploaded_packages['main'] = response.json()
+            
+            # Upload library app file if provided
+            if library_app_file:
+                resolved_library_file = self.resolve_app_file(library_app_file)
+                
+                body = {
+                    "resourceType": "Dynamics365BusinessCentralAddOnLibraryExtensionPackage",
+                    "fileName": os.path.basename(resolved_library_file)
+                }
+                
+                response = requests.post(f"{self.base_url}/products/{product_id}/packages", 
+                                       headers=headers, json=body)
+                
+                if response.status_code not in [200, 201, 202]:
+                    return PublishResult(
+                        success=False,
+                        error=f"Failed to create library package upload: {response.status_code} - {response.text}"
+                    )
+                
+                package_upload = response.json()
+                
+                upload_result = self._upload_file_to_storage(resolved_library_file, package_upload.get('fileSasUri'))
+                if not upload_result:
+                    return PublishResult(
+                        success=False,
+                        error="Failed to upload library file to storage"
+                    )
+                
+                package_upload['state'] = 'Uploaded'
+                response = requests.put(f"{self.base_url}/products/{product_id}/packages/{package_upload['id']}", 
+                                      headers=headers, json=package_upload)
+                
+                if response.status_code not in [200, 201, 202]:
+                    return PublishResult(
+                        success=False,
+                        error=f"Failed to mark library package as uploaded: {response.status_code} - {response.text}"
+                    )
+                
+                uploaded_packages['library'] = response.json()
+            
+            return PublishResult(
+                success=True,
+                response_data=uploaded_packages
+            )
+            
+        except Exception as e:
+            return PublishResult(
+                success=False,
+                error=f"Error uploading packages: {str(e)}"
+            )
+
+    def _upload_file_to_storage(self, file_path: str, sas_uri: str) -> bool:
+        """Upload file to Azure storage using SAS URI"""
+        try:
+            with open(file_path, 'rb') as file_data:
+                # Use PUT request to upload to Azure Blob Storage
+                response = requests.put(sas_uri, 
+                                      data=file_data,
+                                      headers={'x-ms-blob-type': 'BlockBlob'})
+                return response.status_code in [200, 201]
+        except Exception:
+            return False
+
+    def _update_package_configuration(self, product_id: str, package_instance_id: str, uploaded_packages: Dict[str, Any]) -> PublishResult:
+        """Update package configuration with uploaded packages"""
+        headers = self.auth.get_headers()
+        
+        # Get current package configuration
+        api_url = f"{self.base_url}/products/{product_id}/packageConfigurations/getByInstanceID(instanceID={package_instance_id})"
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            return PublishResult(
+                success=False,
+                error=f"Failed to get package configuration: {response.status_code} - {response.text}"
+            )
+        
+        configs = response.json()
+        if not configs.get('value') or len(configs['value']) == 0:
+            return PublishResult(
+                success=False,
+                error="No package configuration found"
+            )
+        
+        package_config = configs['value'][0]
+        
+        # Update package references
+        if 'main' in uploaded_packages:
+            # Remove existing main package references
+            package_config['packageReferences'] = [
+                ref for ref in package_config.get('packageReferences', [])
+                if ref.get('type') != 'Dynamics365BusinessCentralAddOnExtensionPackage'
+            ]
+            # Add new main package reference
+            package_config['packageReferences'].append({
+                'type': 'Dynamics365BusinessCentralAddOnExtensionPackage',
+                'value': uploaded_packages['main']['id']
+            })
+        
+        if 'library' in uploaded_packages:
+            # Remove existing library package references
+            package_config['packageReferences'] = [
+                ref for ref in package_config.get('packageReferences', [])
+                if ref.get('type') != 'Dynamics365BusinessCentralAddOnLibraryExtensionPackage'
+            ]
+            # Add new library package reference
+            package_config['packageReferences'].append({
+                'type': 'Dynamics365BusinessCentralAddOnLibraryExtensionPackage',
+                'value': uploaded_packages['library']['id']
+            })
+        
+        # Update the package configuration with proper ETag header
+        update_headers = headers.copy()
+        # The Microsoft API often requires an If-Match header with the ETag value
+        if '@odata.etag' in package_config:
+            update_headers['If-Match'] = package_config['@odata.etag']
+        else:
+            # Some APIs use a different format
+            update_headers['If-Match'] = '*'
+        
+        response = requests.put(f"{self.base_url}/products/{product_id}/packageConfigurations/{package_config['id']}", 
+                              headers=update_headers, json=package_config)
+        
+        if response.status_code not in [200, 201, 202]:
+            return PublishResult(
+                success=False,
+                error=f"Failed to update package configuration: {response.status_code} - {response.text}"
+            )
+        
+        return PublishResult(success=True)
+
+    def _wait_for_submission(self, product_id: str, submission_id: str, auto_promote: bool = False) -> None:
+        """Wait for submission to complete and optionally auto-promote"""
+        # This would implement the workflow monitoring from the PowerShell code
+        # For now, we'll just return as this is complex polling logic
+        pass
 
     def publish(
         self,

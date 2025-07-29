@@ -136,21 +136,50 @@ class TestAppSourcePublisher:
         assert not result.success
         assert "Either product_name or product_id must be provided" in result.error
 
-    @patch('bc2appsource.publisher.requests.post')
-    def test_submit_to_appsource_current_limitation(self, mock_post):
-        """Test current submission limitation with informative error"""
+    def test_submit_to_appsource_working_implementation(self):
+        """Test that submission method uses proper workflow"""
         publisher = AppSourcePublisher("tenant", "client", "secret")
         
         with tempfile.NamedTemporaryFile(suffix=".app", delete=False) as tmp:
             try:
                 with patch.object(publisher.auth, 'get_access_token', return_value="token"):
-                    result = publisher.submit_to_appsource("product_123", tmp.name)
+                    # Mock the workflow methods
+                    with patch.object(publisher, '_check_existing_submission', return_value=PublishResult(success=True)):
+                        with patch.object(publisher, '_get_package_branch', return_value=PublishResult(success=True, response_data={'currentDraftInstanceID': 'test-id'})):
+                            with patch.object(publisher, '_upload_app_packages', return_value=PublishResult(success=True, response_data={'main': {'id': 'pkg-id'}})):
+                                with patch.object(publisher, '_update_package_configuration', return_value=PublishResult(success=True)):
+                                    with patch('bc2appsource.publisher.requests.post') as mock_post:
+                                        mock_response = Mock()
+                                        mock_response.status_code = 200
+                                        mock_response.json.return_value = {"id": "submission_123"}
+                                        mock_post.return_value = mock_response
+                                        
+                                        result = publisher.submit_to_appsource("product_123", tmp.name)
                 
-                assert not result.success
-                assert "AppSource submission workflow needs to be properly configured" in result.error
-                assert "415 error" in result.error
+                assert result.success
+                assert result.submission_id == "submission_123"
             finally:
                 os.unlink(tmp.name)
+
+    def test_check_existing_submission_success(self):
+        """Test checking existing submission when none in progress"""
+        publisher = AppSourcePublisher("tenant", "client", "secret")
+        
+        with patch.object(publisher.auth, 'get_headers', return_value={}):
+            with patch('bc2appsource.publisher.requests.get') as mock_get:
+                mock_response = Mock()
+                mock_response.status_code = 200
+                mock_response.json.return_value = {
+                    "value": [{
+                        "state": "Published",
+                        "substate": "InStore"
+                    }]
+                }
+                mock_get.return_value = mock_response
+                
+                result = publisher._check_existing_submission("product_123")
+                
+                assert result.success
 
     # TODO: Re-enable these tests when submission workflow is fully implemented
     # @patch('bc2appsource.publisher.requests.post')
@@ -159,23 +188,24 @@ class TestAppSourcePublisher:
     #     # Implementation pending full submission workflow
     #     pass
 
-    @patch('bc2appsource.publisher.requests.post')
-    def test_submit_to_appsource_failure(self, mock_post):
-        """Test AppSource submission returns current limitation message"""
-        mock_response = Mock()
-        mock_response.status_code = 400
-        mock_response.text = "Bad Request"
-        mock_post.return_value = mock_response
-
+    def test_submit_to_appsource_failure(self):
+        """Test AppSource submission failure scenario"""
         publisher = AppSourcePublisher("tenant", "client", "secret")
         
         with tempfile.NamedTemporaryFile(suffix=".app", delete=False) as tmp:
             try:
                 with patch.object(publisher.auth, 'get_access_token', return_value="token"):
-                    result = publisher.submit_to_appsource("product_123", tmp.name)
+                    # Mock the first step to fail
+                    with patch.object(publisher, '_check_existing_submission') as mock_check:
+                        mock_check.return_value = PublishResult(
+                            success=False,
+                            error="An AppSource submission is in progress"
+                        )
+                        
+                        result = publisher.submit_to_appsource("product_123", tmp.name)
                 
                 assert not result.success
-                assert "AppSource submission workflow needs to be properly configured" in result.error
+                assert "An AppSource submission is in progress" in result.error
             finally:
                 os.unlink(tmp.name)
 
