@@ -31,6 +31,69 @@ class TestAppSourcePublisher:
         assert len(products) == 1
         assert products[0]["name"] == "Test Product"
 
+    @patch('bc2appsource.publisher.requests.get')
+    def test_get_products_with_pagination(self, mock_get):
+        """Test product retrieval with pagination"""
+        # First page response
+        first_response = Mock()
+        first_response.status_code = 200
+        first_response.json.return_value = {
+            "value": [{"name": "Product 1", "id": "123"}],
+            "nextLink": "v1.0/ingestion/products?$skipToken=abc123"
+        }
+        
+        # Second page response
+        second_response = Mock()
+        second_response.status_code = 200
+        second_response.json.return_value = {
+            "value": [{"name": "Product 2", "id": "456"}]
+            # No nextLink - last page
+        }
+        
+        mock_get.side_effect = [first_response, second_response]
+
+        publisher = AppSourcePublisher("tenant", "client", "secret")
+        with patch.object(publisher.auth, 'get_headers', return_value={}):
+            products = publisher.get_products()
+
+        assert len(products) == 2
+        assert products[0]["name"] == "Product 1"
+        assert products[1]["name"] == "Product 2"
+        
+        # Verify pagination URLs were called correctly
+        expected_calls = [
+            ((f"{publisher.base_url}/products",), {'headers': {}}),
+            (("https://api.partner.microsoft.com/v1.0/ingestion/products?$skipToken=abc123",), {'headers': {}})
+        ]
+        actual_calls = [call for call in mock_get.call_args_list]
+        assert len(actual_calls) == 2
+
+    @patch('bc2appsource.publisher.requests.get')
+    def test_get_products_pagination_error(self, mock_get):
+        """Test error handling during pagination"""
+        # First page response (success)
+        first_response = Mock()
+        first_response.status_code = 200
+        first_response.json.return_value = {
+            "value": [{"name": "Product 1", "id": "123"}],
+            "nextLink": "v1.0/ingestion/products?$skipToken=abc123"
+        }
+        
+        # Second page response (error)
+        second_response = Mock()
+        second_response.status_code = 500
+        second_response.text = "Internal Server Error"
+        
+        mock_get.side_effect = [first_response, second_response]
+
+        publisher = AppSourcePublisher("tenant", "client", "secret")
+        with patch.object(publisher.auth, 'get_headers', return_value={}):
+            products = publisher.get_products()
+
+        # Should return products from first page only
+        assert len(products) == 1
+        assert products[0]["name"] == "Product 1"
+
     def test_find_product_by_name(self):
         """Test finding product by name"""
         publisher = AppSourcePublisher("tenant", "client", "secret")

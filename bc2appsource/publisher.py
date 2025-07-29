@@ -31,15 +31,38 @@ class AppSourcePublisher:
     def get_products(self, silent: bool = True) -> List[Dict[str, Any]]:
         """Get all AppSource products for the authenticated account"""
         headers = self.auth.get_headers()
+        all_products = []
+        url = f"{self.base_url}/products"
         
-        response = requests.get(f"{self.base_url}/products", headers=headers)
+        while url:
+            # Handle both full URLs and relative URLs from nextLink
+            if url.startswith("v1.0/"):
+                url = f"https://api.partner.microsoft.com/{url}"
+            
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                products = data.get("value", [])
+                all_products.extend(products)
+                
+                # Check for next page
+                next_link = data.get("nextLink")
+                if next_link:
+                    url = next_link
+                    if not silent:
+                        print(f"Fetched {len(products)} products, continuing to next page...")
+                else:
+                    url = None  # No more pages
+            else:
+                if not silent:
+                    print(f"Failed to get products: {response.text}")
+                break
         
-        if response.status_code == 200:
-            return response.json().get("value", [])
-        else:
-            if not silent:
-                print(f"Failed to get products: {response.text}")
-            return []
+        if not silent:
+            print(f"Total products retrieved: {len(all_products)}")
+        
+        return all_products
 
     def find_product_by_name(self, product_name: str) -> Optional[str]:
         """Find product ID by product name"""
